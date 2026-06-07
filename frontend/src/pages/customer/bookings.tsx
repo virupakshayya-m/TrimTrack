@@ -60,7 +60,7 @@ export default function CustomerBookings() {
                       <span className="text-xs text-gray-400">{b.bookingType === "appointment" ? "Appointment" : "Walk-in"}</span>
                     </div>
                     {b.service && (
-                      <div className="text-sm text-gray-500">{b.service.name} — ${b.service.price}</div>
+                      <div className="text-sm text-gray-500">{b.service.name} — ₹{b.service.price}</div>
                     )}
                     {b.scheduledAt && (
                       <div className="text-sm text-gray-500">{new Date(b.scheduledAt).toLocaleString()}</div>

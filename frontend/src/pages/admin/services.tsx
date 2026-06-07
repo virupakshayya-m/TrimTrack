@@ -59,7 +59,7 @@ export default function AdminServices() {
                   <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Classic Haircut" required />
                 </div>
                 <div>
-                  <Label className="mb-1 block">Price ($)</Label>
+                  <Label className="mb-1 block">Price (₹)</Label>
                   <Input type="number" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} min="0" step="0.01" required />
                 </div>
               </div>
@@ -106,7 +106,7 @@ export default function AdminServices() {
                     {s.description && <div className="text-xs text-gray-400">{s.description}</div>}
                   </td>
                   <td className="px-4 py-3 text-gray-500">{s.durationMinutes}m</td>
-                  <td className="px-4 py-3 text-gray-900 font-medium">${s.price}</td>
+                  <td className="px-4 py-3 text-gray-900 font-medium">₹{s.price}</td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-0.5 rounded-full ${s.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
                       {s.isActive ? "Active" : "Inactive"}

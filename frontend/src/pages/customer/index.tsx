@@ -403,7 +403,7 @@ export default function CustomerDashboard() {
                 <SelectContent>
                   {activeServices.map(s => (
                     <SelectItem key={s.id} value={String(s.id)}>
-                      {s.name} — {s.durationMinutes}min — ${s.price}
+                      {s.name} — {s.durationMinutes}min — ₹{s.price}
                     </SelectItem>
                   ))}
                 </SelectContent>
