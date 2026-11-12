@@ -18,7 +18,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const handleLogout = async () => {
     try {
       await logoutMutation.mutateAsync();
-    } catch (e) {
+    } catch {
       // Ignore errors
     } finally {
       clearAuth();
@@ -52,7 +52,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const links = getLinks();
 
-  const NavLinks = () => (
+  const navLinks = (
     <>
       {links.map((link) => (
         <Link key={link.href} href={link.href}>
@@ -92,7 +92,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                 <span>TrimTrack</span>
               </div>
               <div className="flex flex-col gap-2 flex-1">
-                <NavLinks />
+                {navLinks}
               </div>
               <div className="mt-auto border-t pt-4">
                 <div className="px-3 mb-4">
@@ -116,7 +116,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <span>TrimTrack</span>
         </div>
         <div className="flex flex-col gap-2 flex-1">
-          <NavLinks />
+          {navLinks}
         </div>
         <div className="mt-auto border-t pt-4">
           <div className="px-3 mb-4">

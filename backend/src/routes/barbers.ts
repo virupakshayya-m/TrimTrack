@@ -6,6 +6,7 @@ import User from "../models/User";
 import Service from "../models/Service";
 import bcrypt from "bcryptjs";
 import { getActiveQueueCount, calculateWaitTime, calculateNextAvailableSlot } from "../lib/queue";
+import { emitQueueUpdated } from "../lib/socketio";
 
 const router = Router();
 
@@ -78,6 +79,13 @@ router.patch("/barbers/:barberId/status", protect, async (req: any, res: any) =>
 
     await barber.save();
 
+    emitQueueUpdated(barber._id.toString(), {
+      event: "barberStatusChanged",
+      barberId: barber._id,
+      isAccepting: barber.isAccepting,
+      isPaused: barber.isPaused,
+    });
+
     res.json({ ...barber.toObject(), id: barber._id });
   } catch (error: any) {
     res.status(500).json({ error: "Server Error", message: error.message });
@@ -93,10 +101,13 @@ router.get("/barbers/:barberId/slots", async (req, res) => {
       return res.status(400).json({ error: "date query param required (YYYY-MM-DD)" });
     }
 
-    const dayStart = new Date(dateParam);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(dateParam);
-    dayEnd.setHours(23, 59, 59, 999);
+    const [year, month, day] = dateParam.split('-').map(Number);
+    if (!year || !month || !day) {
+      return res.status(400).json({ error: "Invalid date format. Expected YYYY-MM-DD" });
+    }
+
+    const dayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const dayEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
 
     const appointments = await Booking.find({
       barberId,

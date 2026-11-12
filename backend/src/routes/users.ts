@@ -14,13 +14,14 @@ router.get("/users", requireAuth as any, async (req: AuthRequest, res: any) => {
   if (roleParam) filter.role = roleParam;
 
   const users = await User.find(filter).select('-passwordHash');
-  res.json(users);
+  res.json(users.map(u => ({ ...u.toObject(), id: u._id })));
 });
 
 router.get("/users/:userId", requireAuth as any, async (req: AuthRequest, res: any) => {
   const userId = req.params.userId;
+  const currentUserId = (req.user?._id || req.user?.id)?.toString();
 
-  if (req.user?.role !== "admin" && req.user?.id !== userId) {
+  if (req.user?.role !== "admin" && currentUserId !== userId) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -28,13 +29,14 @@ router.get("/users/:userId", requireAuth as any, async (req: AuthRequest, res: a
   if (!user) {
     return res.status(404).json({ error: "User not found" });
   }
-  res.json(user);
+  res.json({ ...user.toObject(), id: user._id });
 });
 
 router.patch("/users/:userId", requireAuth as any, async (req: AuthRequest, res: any) => {
   const userId = req.params.userId;
+  const currentUserId = (req.user?._id || req.user?.id)?.toString();
 
-  if (req.user?.role !== "admin" && req.user?.id !== userId) {
+  if (req.user?.role !== "admin" && currentUserId !== userId) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -49,7 +51,7 @@ router.patch("/users/:userId", requireAuth as any, async (req: AuthRequest, res:
     return res.status(404).json({ error: "User not found" });
   }
 
-  res.json(updatedUser);
+  res.json({ ...updatedUser.toObject(), id: updatedUser._id });
 });
 
 export default router;

@@ -33,9 +33,13 @@ const io = new Server(server, {
   cors: corsOptions,
 });
 
-// Basic Route
-app.get('/api/health', (req, res) => {
+// Basic Routes
+app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
+});
+
+app.get('/api/healthz', (_req, res) => {
+  res.json({ status: 'ok' });
 });
 
 // App Routes
@@ -47,18 +51,42 @@ app.use('/api', queueRoutes);
 app.use('/api', bookingsRoutes);
 app.use('/api', userRoutes);
 
+// 404 handler for API routes
+app.use('/api/*', (_req, res) => {
+  res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Global Error Handler
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("Unhandled API error:", err);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    error: err.name || 'Server Error',
+    message: err.message || 'An unexpected error occurred.',
+  });
+});
+
 // Socket.io Setup
 initializeSocketIO(io);
-
-// Basic connection fallback if needed outside rooms
 
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   await connectDB();
-  server.listen(PORT, () => {
+  const runningServer = server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
+
+  const handleShutdown = async (signal: string) => {
+    console.log(`\n${signal} received. Closing server gracefully...`);
+    runningServer.close(() => {
+      console.log('HTTP and Socket server closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleShutdown('SIGINT'));
 };
 
 startServer();

@@ -23,7 +23,8 @@ export interface QueueCustomer {
 }
 
 export function calculatePriorityScore(customer: Omit<QueueCustomer, "priorityScore" | "id" | "status">, now: Date = new Date()): number {
-  const waitingTime = Math.max(0, (now.getTime() - customer.arrivalTime.getTime()) / 60000);
+  const arrivalMs = customer.arrivalTime instanceof Date ? customer.arrivalTime.getTime() : new Date(customer.arrivalTime).getTime();
+  const waitingTime = Math.max(0, (now.getTime() - arrivalMs) / 60000);
   const appointment = customer.isAppointment ? 1 : 0;
 
   return (
@@ -34,13 +35,15 @@ export function calculatePriorityScore(customer: Omit<QueueCustomer, "prioritySc
   );
 }
 
-export function hasFairnessOverride(customer: { arrivalTime: Date }, now: Date = new Date()): boolean {
-  const waitingMinutes = (now.getTime() - customer.arrivalTime.getTime()) / 60000;
+export function hasFairnessOverride(customer: { arrivalTime: Date | string }, now: Date = new Date()): boolean {
+  const arrivalMs = customer.arrivalTime instanceof Date ? customer.arrivalTime.getTime() : new Date(customer.arrivalTime).getTime();
+  const waitingMinutes = (now.getTime() - arrivalMs) / 60000;
   return waitingMinutes >= FAIRNESS_THRESHOLD_MINUTES;
 }
 
-export function getWaitingMinutes(arrivalTime: Date, now: Date = new Date()): number {
-  return Math.max(0, (now.getTime() - arrivalTime.getTime()) / 60000);
+export function getWaitingMinutes(arrivalTime: Date | string, now: Date = new Date()): number {
+  const arrivalMs = arrivalTime instanceof Date ? arrivalTime.getTime() : new Date(arrivalTime).getTime();
+  return Math.max(0, (now.getTime() - arrivalMs) / 60000);
 }
 
 export function getNextCustomer(customers: QueueCustomer[]): QueueCustomer | null {
@@ -53,9 +56,11 @@ export function getNextCustomer(customers: QueueCustomer[]): QueueCustomer | nul
   const starving = active.filter(c => hasFairnessOverride(c, now));
   if (starving.length > 0) {
     // Among starving, serve the one who has waited the longest (FIFO)
-    return starving.reduce((oldest, curr) =>
-      curr.arrivalTime < oldest.arrivalTime ? curr : oldest
-    );
+    return starving.reduce((oldest, curr) => {
+      const oldestMs = oldest.arrivalTime instanceof Date ? oldest.arrivalTime.getTime() : new Date(oldest.arrivalTime).getTime();
+      const currMs = curr.arrivalTime instanceof Date ? curr.arrivalTime.getTime() : new Date(curr.arrivalTime).getTime();
+      return currMs < oldestMs ? curr : oldest;
+    });
   }
 
   // Normal: highest priority score wins
@@ -76,8 +81,11 @@ export function rebalanceQueue(customers: QueueCustomer[]): QueueCustomer[] {
     if (aStarving && !bStarving) return -1;
     if (!aStarving && bStarving) return 1;
 
+    const msA = a.arrivalTime instanceof Date ? a.arrivalTime.getTime() : new Date(a.arrivalTime).getTime();
+    const msB = b.arrivalTime instanceof Date ? b.arrivalTime.getTime() : new Date(b.arrivalTime).getTime();
+
     if (aStarving && bStarving) {
-      return a.arrivalTime.getTime() - b.arrivalTime.getTime();
+      return msA - msB;
     }
 
     const scoreA = calculatePriorityScore(a, now);

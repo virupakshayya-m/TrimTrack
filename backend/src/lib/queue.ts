@@ -23,17 +23,18 @@ export async function calculateWaitTime(barberId: string): Promise<number> {
   const barber = await Barber.findById(barberId);
   if (!barber) return 0;
 
+  // Only currently serving and active queue customers count towards live queue wait time
   const activeBookings = await Booking.find({
     barberId,
-    status: { $in: ["active", "serving", "pending"] },
+    status: { $in: ["active", "serving"] },
   });
 
-  const avgTime = barber.avgServiceTime;
+  const avgTime = barber.avgServiceTime || 20;
   const servingCount = activeBookings.filter(b => b.status === "serving").length;
-  const pendingCount = activeBookings.filter(b => b.status === "active" || b.status === "pending").length;
+  const waitingCount = activeBookings.filter(b => b.status === "active").length;
 
   const servingRemainingTime = servingCount > 0 ? Math.ceil(avgTime / 2) : 0;
-  return servingRemainingTime + pendingCount * avgTime;
+  return servingRemainingTime + waitingCount * avgTime;
 }
 
 export async function calculateNextAvailableSlot(barberId: string): Promise<Date> {
@@ -45,27 +46,40 @@ export async function calculateNextAvailableSlot(barberId: string): Promise<Date
 export async function getActiveQueueCount(barberId: string): Promise<number> {
   const count = await Booking.countDocuments({
     barberId,
-    status: { $in: ["active", "serving", "pending"] },
+    status: { $in: ["active", "serving"] },
   });
   return count;
 }
 
 // ---- Appointment Activation ----
 export async function activateDueAppointments(barberId: string): Promise<void> {
-  const activationWindow = new Date();
+  const now = new Date();
+  const windowStart = new Date(now.getTime() - 60 * 60000);
+  const windowEnd = new Date(now.getTime() + 15 * 60000);
+
+  // 1. Activate pending appointments that are within 15 minutes of scheduled time or up to 60 minutes past
   const dueAppointments = await Booking.find({
     barberId,
     bookingType: "appointment",
     status: "pending",
-    scheduledAt: { $lte: activationWindow },
+    scheduledAt: { $gte: windowStart, $lte: windowEnd },
   });
-
-  if (dueAppointments.length === 0) return;
 
   for (const appt of dueAppointments) {
     appt.status = "active";
     await appt.save();
   }
+
+  // 2. Automatically mark unserved appointments older than 60 minutes as 'no-show'
+  await Booking.updateMany(
+    {
+      barberId,
+      bookingType: "appointment",
+      status: "pending",
+      scheduledAt: { $lt: windowStart },
+    },
+    { status: "no-show" }
+  );
 }
 
 // ---- Priority Score Helpers ----
@@ -81,14 +95,17 @@ async function toQueueCustomer(booking: any): Promise<QueueCustomer> {
     }
   }
 
+  const rawArrival = booking.scheduledAt || booking.createdAt || new Date();
+  const arrivalTime = rawArrival instanceof Date ? rawArrival : new Date(rawArrival);
+
   return {
     id: booking._id.toString(),
-    arrivalTime: booking.scheduledAt || booking.createdAt,
+    arrivalTime,
     serviceTime,
     profit,
     isAppointment: booking.bookingType === "appointment",
     status: booking.status,
-    priorityScore: booking.priority,
+    priorityScore: booking.priority || 0,
   };
 }
 
@@ -106,7 +123,7 @@ export async function updateBookingPriorityScore(bookingId: string): Promise<num
 export async function updatePriorityScores(barberId: string): Promise<void> {
   const activeBookings = await Booking.find({
     barberId,
-    status: { $in: ["active", "pending"] },
+    status: "active",
   });
 
   for (const booking of activeBookings) {
@@ -121,9 +138,10 @@ export async function recalculatePositions(barberId: string): Promise<void> {
   await activateDueAppointments(barberId);
   await updatePriorityScores(barberId);
 
+  // Only active customers in queue get positions 1, 2, 3...
   const activeBookings = await Booking.find({
     barberId,
-    status: { $in: ["active", "pending"] },
+    status: "active",
   });
 
   const barber = await Barber.findById(barberId);
@@ -135,10 +153,13 @@ export async function recalculatePositions(barberId: string): Promise<void> {
 
   const sorted = rebalanceQueue(queueCustomers);
 
+  const servingCount = await Booking.countDocuments({ barberId, status: "serving" });
+  const baseWait = servingCount > 0 ? Math.ceil(avgTime / 2) : 0;
+
   for (let i = 0; i < sorted.length; i++) {
     const entry = sorted[i];
     const position = i + 1;
-    const estimatedWait = i * avgTime;
+    const estimatedWait = baseWait + i * avgTime;
 
     await Booking.findByIdAndUpdate(entry.id, {
       position,
@@ -149,6 +170,12 @@ export async function recalculatePositions(barberId: string): Promise<void> {
   // Set serving to position 0
   await Booking.updateMany(
     { barberId, status: "serving" },
+    { position: 0, estimatedWaitMinutes: 0 }
+  );
+
+  // Keep pending appointments at position 0
+  await Booking.updateMany(
+    { barberId, status: "pending" },
     { position: 0, estimatedWaitMinutes: 0 }
   );
 }

@@ -26,8 +26,13 @@ router.get("/queue", async (req, res) => {
     const result = await Promise.all(barbers.map(async (barber) => {
       await recalculatePositions(barber._id.toString());
 
-      const allBookings = await Booking.find({ barberId: barber._id })
-        .sort({ position: 1, createdAt: 1 });
+      const allBookings = await Booking.find({
+        barberId: barber._id,
+        $or: [
+          { status: { $in: ["active", "serving", "waitlisted"] } },
+          { status: "pending", bookingType: "appointment", scheduledAt: { $gte: new Date() } }
+        ]
+      }).sort({ position: 1, createdAt: 1 });
 
       const activeQueue = allBookings.filter(b =>
         b.status === "active" || b.status === "serving"
@@ -103,13 +108,13 @@ router.post("/queue/join", protect, async (req: any, res: any) => {
 
     const existingBooking = await Booking.findOne({
       customerId: req.user._id,
-      status: { $in: ["active", "serving", "pending", "waitlisted"] }
+      status: { $in: ["active", "serving"] }
     });
 
     if (existingBooking) {
       return res.status(400).json({ 
         error: "Already in queue", 
-        message: "You are already in a queue." 
+        message: "You are already actively in a queue." 
       });
     }
 
@@ -159,7 +164,7 @@ router.get("/queue/my-position", protect, async (req: any, res: any) => {
   try {
     const bookings = await Booking.find({
       customerId: req.user._id,
-      status: { $in: ["active", "serving", "pending", "waitlisted"] }
+      status: { $in: ["active", "serving"] }
     }).sort({ position: 1, createdAt: -1 });
 
     if (bookings.length === 0) {
@@ -277,15 +282,21 @@ router.post("/queue/transfer-bulk", protect, admin, async (req: any, res: any) =
 
     const transferNote = reason || `Transferred to ${targetBarber.name} due to emergency.`;
 
-    await Booking.updateMany(
-      { _id: { $in: bookingIds } },
-      { 
-        barberId: finalTargetBarberId,
-        wasTransferred: true,
-        transferNote,
-        status: "active" 
+    const now = new Date();
+    const bookingsToTransfer = await Booking.find({ _id: { $in: bookingIds } });
+
+    for (const b of bookingsToTransfer) {
+      b.barberId = finalTargetBarberId;
+      b.wasTransferred = true;
+      b.transferNote = transferNote;
+      // Keep future pending appointments pending; make immediate customers active
+      if (b.bookingType === "appointment" && b.scheduledAt && b.scheduledAt > now && b.status === "pending") {
+        b.status = "pending";
+      } else {
+        b.status = "active";
       }
-    );
+      await b.save();
+    }
 
     // Recalculate for both source and target
     if (sourceBarberId) {

@@ -27,8 +27,11 @@ export function initializeSocketIO(serverIo: Server) {
 
 /**
  * Emits an event to all clients listening to a specific barber's queue
+ * as well as broadcasting to general dashboard listeners
  */
 export function emitQueueUpdated(barberId: string, payload?: any) {
   if (!io) return;
-  io.to(`barber-${barberId}`).emit("queueUpdated", payload);
+  const data = { barberId, ...payload };
+  io.to(`barber-${barberId}`).emit("queueUpdated", data);
+  io.emit("queueUpdated", data);
 }

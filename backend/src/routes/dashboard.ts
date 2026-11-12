@@ -17,6 +17,8 @@ router.get("/dashboard/summary", async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
     const allBarbers = await Barber.find();
 
@@ -25,16 +27,22 @@ router.get("/dashboard/summary", async (req, res) => {
     }
 
     const todayBookings = await Booking.find({
-      createdAt: { $gte: today },
+      $or: [
+        { createdAt: { $gte: today, $lt: tomorrow } },
+        { scheduledAt: { $gte: today, $lt: tomorrow } },
+        { completedAt: { $gte: today, $lt: tomorrow } },
+        { cancelledAt: { $gte: today, $lt: tomorrow } }
+      ]
     });
 
     const totalCustomersToday = todayBookings.filter(b =>
-      b.bookingType === "walkin" || b.bookingType === "appointment"
+      (b.bookingType === "walkin" && b.createdAt >= today && b.createdAt < tomorrow) ||
+      (b.bookingType === "appointment" && b.scheduledAt && b.scheduledAt >= today && b.scheduledAt < tomorrow)
     ).length;
-    const totalServedToday = todayBookings.filter(b => b.status === "completed").length;
-    const cancellationsToday = todayBookings.filter(b => b.status === "cancelled").length;
+    const totalServedToday = await Booking.countDocuments({ completedAt: { $gte: today, $lt: tomorrow } });
+    const cancellationsToday = await Booking.countDocuments({ cancelledAt: { $gte: today, $lt: tomorrow } });
     const activeBarbers = allBarbers.filter(b => b.isAccepting && !b.isPaused).length;
-    const currentQueueSize = todayBookings.filter(b => b.status === "active" || b.status === "serving").length;
+    const currentQueueSize = await Booking.countDocuments({ status: { $in: ["active", "serving"] } });
 
     let totalWait = 0;
     for (const barber of allBarbers) {
@@ -78,14 +86,11 @@ router.get("/dashboard/barber/:barberId", async (req, res) => {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
 
-    const todayBookings = await Booking.find({
-      barberId,
-      createdAt: { $gte: today }
-    });
-
-    const served = todayBookings.filter(b => b.status === "completed").length;
-    const cancelled = todayBookings.filter(b => b.status === "cancelled").length;
+    const served = await Booking.countDocuments({ barberId, completedAt: { $gte: today, $lt: tomorrow } });
+    const cancelled = await Booking.countDocuments({ barberId, cancelledAt: { $gte: today, $lt: tomorrow } });
 
     const currentQueue = await Booking.find({
       barberId,

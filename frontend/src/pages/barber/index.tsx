@@ -34,7 +34,7 @@ export default function BarberDashboard() {
   const queryClient = useQueryClient();
 
   const { data: barbers } = useListBarbers();
-  const myBarber = (barbers ?? []).find(b => b.userId === user?.id);
+  const myBarber = (barbers ?? []).find(b => String(b.userId) === String(user?.id));
   const barberId = myBarber?.id;
 
   const { data: dashboard, isLoading } = useGetBarberDashboard(barberId ?? 0, {

@@ -40,10 +40,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 function WaitTimer({ estimatedMinutes }: { estimatedMinutes: number }) {
   const [remaining, setRemaining] = useState(estimatedMinutes * 60);
+  const [prevMinutes, setPrevMinutes] = useState(estimatedMinutes);
 
-  useEffect(() => {
+  if (estimatedMinutes !== prevMinutes) {
+    setPrevMinutes(estimatedMinutes);
     setRemaining(estimatedMinutes * 60);
-  }, [estimatedMinutes]);
+  }
 
   useEffect(() => {
     if (remaining <= 0) return;

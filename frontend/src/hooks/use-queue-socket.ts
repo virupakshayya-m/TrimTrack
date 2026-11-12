@@ -6,6 +6,7 @@ import {
   getListBarbersQueryKey,
   getListQueueQueryKey,
   getGetBarberDashboardQueryKey,
+  getGetDashboardSummaryQueryKey,
 } from "@workspace/api-client-react";
 
 /**
@@ -31,6 +32,7 @@ export function useQueueSocket(barberId?: number): void {
       queryClient.invalidateQueries({ queryKey: getListQueueQueryKey() });
       queryClient.invalidateQueries({ queryKey: getListBarbersQueryKey() });
       queryClient.invalidateQueries({ queryKey: getGetMyQueuePositionQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
       // Also refresh barber dashboard if subscribed to a specific barber
       if (barberId !== undefined) {
         queryClient.invalidateQueries({ queryKey: getGetBarberDashboardQueryKey(barberId) });

@@ -14,10 +14,10 @@ interface BookedSlot {
   durationMinutes: number;
 }
 
-function isSlotConflict(selectedDate: string, selectedTime: string, slots: BookedSlot[]): boolean {
+function isSlotConflict(selectedDate: string, selectedTime: string, slots: BookedSlot[], durationMinutes: number = 30): boolean {
   if (!selectedDate || !selectedTime) return false;
   const newStart = new Date(`${selectedDate}T${selectedTime}`);
-  const newEnd = new Date(newStart.getTime() + 30 * 60000);
+  const newEnd = new Date(newStart.getTime() + durationMinutes * 60000);
 
   return slots.some(slot => {
     const existStart = new Date(slot.scheduledAt);
@@ -78,7 +78,10 @@ export default function CustomerBook() {
       toast({ title: "Missing fields", description: "Please select a barber, date, and time.", variant: "destructive" });
       return;
     }
-    if (isSlotConflict(date, time, bookedSlots)) {
+    const selectedServiceObj = (services ?? []).find(s => String(s.id) === String(serviceId));
+    const currentDuration = selectedServiceObj?.durationMinutes || 30;
+
+    if (isSlotConflict(date, time, bookedSlots, currentDuration)) {
       toast({ title: "Time slot taken", description: "This time is already booked. Please choose a different slot.", variant: "destructive" });
       return;
     }
@@ -98,7 +101,10 @@ export default function CustomerBook() {
     });
   };
 
-  const hasConflict = isSlotConflict(date, time, bookedSlots);
+  const todayStr = new Date().toLocaleDateString('en-CA');
+  const selectedServiceObj = (services ?? []).find(s => String(s.id) === String(serviceId));
+  const currentDuration = selectedServiceObj?.durationMinutes || 30;
+  const hasConflict = isSlotConflict(date, time, bookedSlots, currentDuration);
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -146,7 +152,7 @@ export default function CustomerBook() {
                   type="date"
                   value={date}
                   onChange={e => { setDate(e.target.value); setTime(""); }}
-                  min={new Date().toISOString().split("T")[0]}
+                  min={todayStr}
                   className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
@@ -156,7 +162,7 @@ export default function CustomerBook() {
                   type="time"
                   value={time}
                   onChange={e => setTime(e.target.value)}
-                  min={date === new Date().toISOString().split("T")[0] ? new Date().toTimeString().slice(0, 5) : undefined}
+                  min={date === todayStr ? new Date().toTimeString().slice(0, 5) : undefined}
                   className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 ${hasConflict ? "border-red-400 bg-red-50" : "border-gray-200"}`}
                 />
                 {hasConflict && (

@@ -13,7 +13,7 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
     try {
       token = req.headers.authorization.split(' ')[1];
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret123') as any;
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecret123') as any;
       req.user = await User.findById(decoded.id).select('-passwordHash');
       
       if (!req.user) {

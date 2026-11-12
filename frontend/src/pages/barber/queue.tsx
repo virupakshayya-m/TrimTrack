@@ -6,10 +6,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function BarberQueue() {
   const { user } = useAuth();
   const { data: barbers } = useListBarbers();
-  const myBarber = (barbers ?? []).find(b => b.userId === user?.id);
+  const myBarber = (barbers ?? []).find(b => String(b.userId) === String(user?.id));
   const { data: queues, isLoading } = useListQueue({ query: { refetchInterval: 10000 } as any });
 
-  const myQueue = (queues ?? []).find(q => q.barberId === myBarber?.id);
+  const myQueue = (queues ?? []).find(q => String(q.barberId) === String(myBarber?.id));
 
   if (isLoading) return (
     <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}</div>

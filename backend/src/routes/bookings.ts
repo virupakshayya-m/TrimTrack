@@ -34,7 +34,11 @@ router.get("/bookings", protect, async (req: any, res: any) => {
       query.customerId = req.user._id;
     } else if (req.user.role === "barber") {
       const barber = await Barber.findOne({ userId: req.user._id });
-      if (barber) query.barberId = barber._id;
+      if (barber) {
+        query.barberId = barber._id;
+      } else {
+        return res.json([]);
+      }
     }
 
     const bookings = await Booking.find(query).sort({ createdAt: -1 });
@@ -74,8 +78,50 @@ router.post("/bookings", protect, async (req: any, res: any) => {
 
     const arrivalTime = new Date(scheduledAt);
 
+    if (isNaN(arrivalTime.getTime())) {
+      return res.status(400).json({ error: "Invalid date format", message: "Invalid scheduled time format" });
+    }
+
     if (arrivalTime < new Date()) {
       return res.status(400).json({ error: "Cannot book appointments in the past" });
+    }
+
+    // Backend Slot Conflict Prevention: ensure no overlapping appointments for this barber
+    const newStart = arrivalTime;
+    const newEnd = new Date(newStart.getTime() + serviceTime * 60000);
+
+    const dayStart = new Date(newStart);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(newStart);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    // Check existing appointments on the same day for overlap
+    const existingAppointments = await Booking.find({
+      barberId,
+      bookingType: "appointment",
+      status: { $in: ["pending", "active", "serving"] },
+      scheduledAt: {
+        $gte: dayStart,
+        $lte: dayEnd,
+      },
+    });
+
+    for (const exist of existingAppointments) {
+      if (!exist.scheduledAt) continue;
+      let existDuration = barber.avgServiceTime || 30;
+      if (exist.serviceId) {
+        const existSvc = await Service.findById(exist.serviceId);
+        if (existSvc && existSvc.durationMinutes) existDuration = existSvc.durationMinutes;
+      }
+      const existStart = new Date(exist.scheduledAt);
+      const existEnd = new Date(existStart.getTime() + existDuration * 60000);
+
+      if (newStart < existEnd && newEnd > existStart) {
+        return res.status(400).json({
+          error: "Time slot conflict",
+          message: "This time slot is already booked for this barber. Please choose a different slot.",
+        });
+      }
     }
 
     const initialScore = Math.round(calculatePriorityScore({
@@ -135,10 +181,25 @@ router.patch("/bookings/:bookingId/:action", protect, async (req: any, res: any)
 
     // Permissions check
     const isOwner = booking.customerId ? booking.customerId.toString() === req.user._id.toString() : false;
-    const isStaff = req.user.role === "admin" || req.user.role === "barber";
+    const isAdmin = req.user.role === "admin";
+    let isAssignedBarber = false;
+
+    if (req.user.role === "barber") {
+      const barber = await Barber.findOne({ userId: req.user._id });
+      if (barber && barber._id.toString() === booking.barberId.toString()) {
+        isAssignedBarber = true;
+      }
+    }
+
+    const isStaff = isAdmin || isAssignedBarber;
 
     if (!isOwner && !isStaff) {
-      return res.status(403).json({ error: "Forbidden" });
+      return res.status(403).json({ error: "Forbidden: Not authorized to modify this booking" });
+    }
+
+    // Customers can only cancel
+    if (isOwner && !isStaff && status !== "cancelled") {
+      return res.status(403).json({ error: "Forbidden: Customers can only cancel their booking" });
     }
 
     // Business Logic: Only barber/admin can serve/complete
@@ -160,10 +221,12 @@ router.patch("/bookings/:bookingId/:action", protect, async (req: any, res: any)
 
         if (diffMins < 20) { // 20 minute rule
           penaltyApplied = true;
-          const user = await User.findById(booking.customerId);
-          if (user) {
-            user.penaltyPoints = (user.penaltyPoints || 0) + 1;
-            await user.save();
+          if (booking.customerId) {
+            const user = await User.findById(booking.customerId);
+            if (user) {
+              user.penaltyPoints = (user.penaltyPoints || 0) + 1;
+              await user.save();
+            }
           }
           message = "Cancelled with penalty (late cancellation).";
         } else {
@@ -175,8 +238,13 @@ router.patch("/bookings/:bookingId/:action", protect, async (req: any, res: any)
     }
 
     booking.status = status;
+    booking.penaltyApplied = penaltyApplied;
     if (status === "serving") booking.servedAt = new Date();
-    if (status === "completed") booking.completedAt = new Date();
+    if (status === "completed") {
+      booking.completedAt = new Date();
+      // Increment barber's totalServed metric
+      await Barber.findByIdAndUpdate(booking.barberId, { $inc: { totalServed: 1 } });
+    }
     if (status === "cancelled") booking.cancelledAt = new Date();
 
     await booking.save();
@@ -209,10 +277,20 @@ router.delete("/bookings/:bookingId", protect, async (req: any, res: any) => {
 
     // Permissions check
     const isOwner = booking.customerId ? booking.customerId.toString() === req.user._id.toString() : false;
-    const isStaff = req.user.role === "admin" || req.user.role === "barber";
+    const isAdmin = req.user.role === "admin";
+    let isAssignedBarber = false;
+
+    if (req.user.role === "barber") {
+      const barber = await Barber.findOne({ userId: req.user._id });
+      if (barber && barber._id.toString() === booking.barberId.toString()) {
+        isAssignedBarber = true;
+      }
+    }
+
+    const isStaff = isAdmin || isAssignedBarber;
 
     if (!isOwner && !isStaff) {
-      return res.status(403).json({ error: "Forbidden" });
+      return res.status(403).json({ error: "Forbidden: Not authorized to cancel this booking" });
     }
 
     let penaltyApplied = false;
@@ -226,16 +304,19 @@ router.delete("/bookings/:bookingId", protect, async (req: any, res: any) => {
 
       if (diffMins < 20) { // 20 minute rule
         penaltyApplied = true;
-        const user = await User.findById(booking.customerId);
-        if (user) {
-          user.penaltyPoints = (user.penaltyPoints || 0) + 1;
-          await user.save();
+        if (booking.customerId) {
+          const user = await User.findById(booking.customerId);
+          if (user) {
+            user.penaltyPoints = (user.penaltyPoints || 0) + 1;
+            await user.save();
+          }
         }
         message = "Cancelled with penalty (late cancellation).";
       }
     }
 
     booking.status = "cancelled";
+    booking.penaltyApplied = penaltyApplied;
     booking.cancelledAt = new Date();
     await booking.save();
 
